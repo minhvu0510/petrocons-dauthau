@@ -1081,6 +1081,7 @@ function ArchiveModule() {
   const [comparing, setComparing] = useState(false);
   const [compareResult, setCompareResult] = useState(null);
   const [compareError, setCompareError] = useState(null);
+  const [compareRaw, setCompareRaw] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -1121,7 +1122,7 @@ function ArchiveModule() {
 
   const quickCompare = async () => {
     if (selectedIds.length !== 2) return;
-    setComparing(true); setCompareError(null); setCompareResult(null);
+    setComparing(true); setCompareError(null); setCompareResult(null); setCompareRaw(null);
     try {
       const itemA = items.find(i => i.id === selectedIds[0]);
       const itemB = items.find(i => i.id === selectedIds[1]);
@@ -1138,27 +1139,38 @@ Trả lời bằng tiếng Việt, súc tích. Trả về JSON theo cấu trúc:
     {"muc": "Tên mục", "ban_cu": "...", "ban_moi": "...", "muc_do": "Cao hoặc Trung bình hoặc Thấp"}
   ],
   "luu_y": "Nhắc nhở ngắn nếu cần so sánh sâu hơn bằng cách upload lại 2 file PDF gốc"
-}`;
+}
+QUAN TRỌNG:
+- Đây phải là JSON hợp lệ 100%. Nếu nội dung cần trích có chứa dấu ngoặc kép ("), PHẢI escape thành \\" hoặc diễn đạt lại không dùng dấu ngoặc kép.
+- Mỗi trường "ban_cu"/"ban_moi": tối đa 1-2 câu ngắn, không trích dẫn nguyên văn dài.
+- Tối đa 10 mục trong "thay_doi_phat_hien", chọn những thay đổi quan trọng nhất.`;
 
       const prompt = `BẢN A (lưu ngày ${itemA.created_at ? new Date(itemA.created_at).toLocaleDateString("vi-VN") : "?"}):
 ${JSON.stringify({
   ten_goi_thau: itemA.ten_goi_thau, chu_dau_tu: itemA.chu_dau_tu, gia_tri_uoc_tinh: itemA.gia_tri_uoc_tinh,
   han_nop: itemA.han_nop, yeu_cau_chinh: itemA.yeu_cau_chinh, dieu_kien_tham_du: itemA.dieu_kien_tham_du,
   rui_ro_can_luu_y: itemA.rui_ro_can_luu_y, tieu_chi_danh_gia: itemA.tieu_chi_danh_gia,
-}, null, 0)}
+  doi_tac_nha_thau_phu: itemA.doi_tac_nha_thau_phu, xac_nhan_chu_dau_tu: itemA.xac_nhan_chu_dau_tu,
+})}
 
 BẢN B (lưu ngày ${itemB.created_at ? new Date(itemB.created_at).toLocaleDateString("vi-VN") : "?"}):
 ${JSON.stringify({
   ten_goi_thau: itemB.ten_goi_thau, chu_dau_tu: itemB.chu_dau_tu, gia_tri_uoc_tinh: itemB.gia_tri_uoc_tinh,
   han_nop: itemB.han_nop, yeu_cau_chinh: itemB.yeu_cau_chinh, dieu_kien_tham_du: itemB.dieu_kien_tham_du,
   rui_ro_can_luu_y: itemB.rui_ro_can_luu_y, tieu_chi_danh_gia: itemB.tieu_chi_danh_gia,
-}, null, 0)}
+  doi_tac_nha_thau_phu: itemB.doi_tac_nha_thau_phu, xac_nhan_chu_dau_tu: itemB.xac_nhan_chu_dau_tu,
+})}
 
 So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
 
-      const raw = await callClaude(systemPrompt, prompt, false, 2048);
+      const raw = await callClaude(systemPrompt, prompt, false, 4096);
       const clean = raw.replace(/```json|```/g, "").trim();
-      setCompareResult(JSON.parse(clean));
+      try {
+        setCompareResult(JSON.parse(clean));
+      } catch (parseErr) {
+        setCompareRaw(clean);
+        setCompareError("Không đọc được kết quả dạng có cấu trúc. Nội dung thô AI trả về vẫn hiển thị phía dưới.");
+      }
     } catch (e) {
       setCompareError("Lỗi so sánh nhanh: " + e.message);
     } finally {
@@ -1227,6 +1239,18 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
       {compareError && (
         <Card style={{ background: COLORS.dangerLight, border: `1px solid ${COLORS.danger}` }}>
           <span style={{ color: COLORS.danger }}>⚠️ {compareError}</span>
+        </Card>
+      )}
+
+      {compareRaw && (
+        <Card style={{ background: COLORS.amberLight, border: `1px solid ${COLORS.amber}` }}>
+          <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 10 }}>📄 Nội dung thô từ AI (chưa định dạng được)</div>
+          <div style={{
+            whiteSpace: "pre-wrap", fontSize: 12, color: COLORS.slate, fontFamily: "monospace",
+            background: COLORS.white, padding: 12, borderRadius: 6, maxHeight: 400, overflow: "auto",
+          }}>
+            {compareRaw}
+          </div>
         </Card>
       )}
 
