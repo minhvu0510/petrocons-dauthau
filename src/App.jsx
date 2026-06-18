@@ -205,6 +205,7 @@ function AnalyzeModule() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [rawResult, setRawResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -212,12 +213,12 @@ function AnalyzeModule() {
 
   const handleFile = e => {
     const f = e.target.files[0];
-    if (f) { setFile(f); setResult(null); setError(null); setSaved(false); setSaveError(null); }
+    if (f) { setFile(f); setResult(null); setError(null); setRawResult(null); setSaved(false); setSaveError(null); }
   };
 
   const analyze = async () => {
     if (!file) return;
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true); setError(null); setResult(null); setRawResult(null);
     try {
       const base64 = await new Promise((res, rej) => {
         const r = new FileReader();
@@ -237,21 +238,35 @@ Trả về JSON theo đúng cấu trúc sau, không thêm markdown hay text ngo�
   "yeu_cau_chinh": ["...", "..."],
   "dieu_kien_tham_du": ["...", "..."],
   "rui_ro_can_luu_y": ["...", "..."],
-  "tieu_chi_danh_gia": ["...", "..."]
-}`;
+  "tieu_chi_danh_gia": ["...", "..."],
+  "doi_tac_nha_thau_phu": [
+    {"noi_dung": "Mô tả yêu cầu/điều kiện liên quan đến partner, nhà thầu phụ, liên danh, vendor cung cấp thiết bị/vật tư", "muc_do": "Cao hoặc Trung bình hoặc Thấp"}
+  ],
+  "xac_nhan_chu_dau_tu": [
+    {"loai": "Xác nhận dự án tương tự / Xác nhận nhân sự / Xác nhận nghiệm thu / khác", "noi_dung": "Mô tả cụ thể yêu cầu xác nhận từ chủ đầu tư hoặc bên thứ 3, kèm hình thức xác nhận nếu có (văn bản, đóng dấu, thư xác nhận...)", "muc_do": "Cao hoặc Trung bình hoặc Thấp"}
+  ]
+}
+Hai nhóm "doi_tac_nha_thau_phu" và "xac_nhan_chu_dau_tu" RẤT QUAN TRỌNG, cần đọc kỹ toàn bộ hồ sơ để tìm đầy đủ, không chỉ lấy từ phần tóm tắt đầu hồ sơ:
+- "doi_tac_nha_thau_phu": mọi điều khoản về liên danh, nhà thầu phụ (subcontractor), đối tác cung cấp thiết bị/vật tư chính (vendor), yêu cầu năng lực của đối tác nếu liên danh, tỷ lệ phân chia công việc cho phép, giới hạn số nhà thầu phụ.
+- "xac_nhan_chu_dau_tu": mọi yêu cầu cần có xác nhận/chứng thực từ chủ đầu tư dự án trước đó (xác nhận đã hoàn thành dự án tương tự), xác nhận năng lực nhân sự chủ chốt (CV, chứng chỉ được chủ đầu tư cũ xác nhận), xác nhận đã nghiệm thu/bàn giao công trình tương tự, hoặc bất kỳ loại thư xác nhận/xác thực nào được yêu cầu trong hồ sơ.
+Nếu hồ sơ không có nội dung nào ở 1 nhóm, trả về mảng rỗng [] cho nhóm đó — không tự suy diễn hoặc bỏ qua việc đọc kỹ.`;
 
       const userContent = [
         {
           type: "document",
           source: { type: "base64", media_type: "application/pdf", data: base64 },
         },
-        { type: "text", text: "Phân tích hồ sơ mời thầu này theo cấu trúc JSON yêu cầu." },
+        { type: "text", text: "Phân tích hồ sơ mời thầu này theo cấu trúc JSON yêu cầu. Đặc biệt chú ý đọc kỹ toàn bộ hồ sơ (không chỉ phần tóm tắt) để tìm đầy đủ thông tin về đối tác/nhà thầu phụ và các yêu cầu xác nhận từ chủ đầu tư." },
       ];
 
-      const raw = await callClaude(systemPrompt, userContent, true);
+      const raw = await callClaude(systemPrompt, userContent, true, 6144);
       const clean = raw.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      setResult(parsed);
+      try {
+        setResult(JSON.parse(clean));
+      } catch (parseErr) {
+        setRawResult(clean);
+        setError("Không đọc được kết quả dạng có cấu trúc (có thể do hồ sơ quá dài). Nội dung thô AI trả về vẫn hiển thị phía dưới.");
+      }
     } catch (e) {
       setError("Lỗi phân tích: " + e.message);
     } finally {
@@ -273,6 +288,8 @@ Trả về JSON theo đúng cấu trúc sau, không thêm markdown hay text ngo�
         dieu_kien_tham_du: result.dieu_kien_tham_du || [],
         rui_ro_can_luu_y: result.rui_ro_can_luu_y || [],
         tieu_chi_danh_gia: result.tieu_chi_danh_gia || [],
+        doi_tac_nha_thau_phu: result.doi_tac_nha_thau_phu || [],
+        xac_nhan_chu_dau_tu: result.xac_nhan_chu_dau_tu || [],
       });
       setSaved(true);
     } catch (e) {
@@ -319,8 +336,71 @@ Trả về JSON theo đúng cấu trúc sau, không thêm markdown hay text ngo�
         <span style={{ color: COLORS.danger }}>⚠️ {error}</span>
       </Card>}
 
+      {rawResult && (
+        <Card style={{ background: COLORS.amberLight, border: `1px solid ${COLORS.amber}` }}>
+          <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 10 }}>📄 Nội dung thô từ AI (chưa định dạng được)</div>
+          <div style={{
+            whiteSpace: "pre-wrap", fontSize: 12, color: COLORS.slate, fontFamily: "monospace",
+            background: COLORS.white, padding: 12, borderRadius: 6, maxHeight: 400, overflow: "auto",
+          }}>
+            {rawResult}
+          </div>
+        </Card>
+      )}
+
       {result && (
         <div>
+          {((result.doi_tac_nha_thau_phu || []).length > 0 || (result.xac_nhan_chu_dau_tu || []).length > 0) && (
+            <Card style={{ borderLeft: `5px solid ${COLORS.amber}`, background: COLORS.amberLight }}>
+              <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 14, fontSize: 15 }}>
+                🔑 Điểm cần lưu ý đặc biệt: Đối tác & Xác nhận từ Chủ đầu tư
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.navy, marginBottom: 10, textTransform: "uppercase" }}>🤝 Đối tác / Nhà thầu phụ / Vendor</div>
+                  {(result.doi_tac_nha_thau_phu || []).length === 0
+                    ? <span style={{ fontSize: 13, color: COLORS.slateLight }}>Không có yêu cầu cụ thể trong hồ sơ</span>
+                    : result.doi_tac_nha_thau_phu.map((d, i) => (
+                      <div key={i} style={{
+                        background: COLORS.white, borderRadius: 6, padding: 10, marginBottom: 8,
+                        borderLeft: `3px solid ${d.muc_do === "Cao" ? COLORS.danger : d.muc_do === "Trung bình" ? COLORS.amber : COLORS.slateLight}`,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <Badge color={d.muc_do === "Cao" ? COLORS.danger : d.muc_do === "Trung bình" ? COLORS.amber : COLORS.slateLight}
+                                 bg={d.muc_do === "Cao" ? COLORS.dangerLight : d.muc_do === "Trung bình" ? COLORS.amberLight : COLORS.surface}>
+                            {d.muc_do}
+                          </Badge>
+                        </div>
+                        <div style={{ fontSize: 13, color: COLORS.slate }}>{d.noi_dung}</div>
+                      </div>
+                    ))
+                  }
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.navy, marginBottom: 10, textTransform: "uppercase" }}>✍️ Xác nhận từ Chủ đầu tư</div>
+                  {(result.xac_nhan_chu_dau_tu || []).length === 0
+                    ? <span style={{ fontSize: 13, color: COLORS.slateLight }}>Không có yêu cầu cụ thể trong hồ sơ</span>
+                    : result.xac_nhan_chu_dau_tu.map((d, i) => (
+                      <div key={i} style={{
+                        background: COLORS.white, borderRadius: 6, padding: 10, marginBottom: 8,
+                        borderLeft: `3px solid ${d.muc_do === "Cao" ? COLORS.danger : d.muc_do === "Trung bình" ? COLORS.amber : COLORS.slateLight}`,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <strong style={{ fontSize: 12, color: COLORS.navy }}>{d.loai}</strong>
+                          <Badge color={d.muc_do === "Cao" ? COLORS.danger : d.muc_do === "Trung bình" ? COLORS.amber : COLORS.slateLight}
+                                 bg={d.muc_do === "Cao" ? COLORS.dangerLight : d.muc_do === "Trung bình" ? COLORS.amberLight : COLORS.surface}>
+                            {d.muc_do}
+                          </Badge>
+                        </div>
+                        <div style={{ fontSize: 13, color: COLORS.slate }}>{d.noi_dung}</div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            </Card>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Card>
               <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 12 }}>📌 Thông tin chung</div>
@@ -993,6 +1073,10 @@ function ArchiveModule() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [comparing, setComparing] = useState(false);
+  const [compareResult, setCompareResult] = useState(null);
+  const [compareError, setCompareError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -1014,12 +1098,72 @@ function ArchiveModule() {
     try {
       await deleteGoiThau(id);
       setItems(items.filter(i => i.id !== id));
+      setSelectedIds(selectedIds.filter(s => s !== id));
     } catch (e) {
       setError(e.message);
     } finally {
       setDeletingId(null);
     }
   };
+
+  const toggleSelect = (id) => {
+    setCompareResult(null); setCompareError(null);
+    setSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(s => s !== id);
+      if (prev.length >= 2) return [prev[1], id]; // giữ tối đa 2, đẩy cái cũ nhất ra
+      return [...prev, id];
+    });
+  };
+
+  const quickCompare = async () => {
+    if (selectedIds.length !== 2) return;
+    setComparing(true); setCompareError(null); setCompareResult(null);
+    try {
+      const itemA = items.find(i => i.id === selectedIds[0]);
+      const itemB = items.find(i => i.id === selectedIds[1]);
+
+      // So sánh dựa trên JSON tóm tắt đã lưu — KHÔNG gửi lại file PDF gốc,
+      // nên rẻ hơn nhiều lần so với module So sánh Phiên bản (chỉ gửi text, không gửi ảnh trang PDF)
+      const systemPrompt = `Bạn là chuyên gia phân tích hồ sơ mời thầu (HSMT) cho công ty xây lắp dầu khí PETROCONs.
+Bạn nhận 2 bản tóm tắt JSON (đã được trích xuất trước đó từ 2 phiên bản HSMT của cùng 1 gói thầu).
+So sánh 2 bản tóm tắt này, tìm điểm khác biệt. Lưu ý: đây là so sánh dựa trên tóm tắt, không phải toàn văn — có thể không bắt được thay đổi nhỏ không nằm trong tóm tắt.
+Trả lời bằng tiếng Việt, súc tích. Trả về JSON theo cấu trúc:
+{
+  "tom_tat_thay_doi": "Tóm tắt ngắn 1-2 câu",
+  "thay_doi_phat_hien": [
+    {"muc": "Tên mục", "ban_cu": "...", "ban_moi": "...", "muc_do": "Cao hoặc Trung bình hoặc Thấp"}
+  ],
+  "luu_y": "Nhắc nhở ngắn nếu cần so sánh sâu hơn bằng cách upload lại 2 file PDF gốc"
+}`;
+
+      const prompt = `BẢN A (lưu ngày ${itemA.created_at ? new Date(itemA.created_at).toLocaleDateString("vi-VN") : "?"}):
+${JSON.stringify({
+  ten_goi_thau: itemA.ten_goi_thau, chu_dau_tu: itemA.chu_dau_tu, gia_tri_uoc_tinh: itemA.gia_tri_uoc_tinh,
+  han_nop: itemA.han_nop, yeu_cau_chinh: itemA.yeu_cau_chinh, dieu_kien_tham_du: itemA.dieu_kien_tham_du,
+  rui_ro_can_luu_y: itemA.rui_ro_can_luu_y, tieu_chi_danh_gia: itemA.tieu_chi_danh_gia,
+}, null, 0)}
+
+BẢN B (lưu ngày ${itemB.created_at ? new Date(itemB.created_at).toLocaleDateString("vi-VN") : "?"}):
+${JSON.stringify({
+  ten_goi_thau: itemB.ten_goi_thau, chu_dau_tu: itemB.chu_dau_tu, gia_tri_uoc_tinh: itemB.gia_tri_uoc_tinh,
+  han_nop: itemB.han_nop, yeu_cau_chinh: itemB.yeu_cau_chinh, dieu_kien_tham_du: itemB.dieu_kien_tham_du,
+  rui_ro_can_luu_y: itemB.rui_ro_can_luu_y, tieu_chi_danh_gia: itemB.tieu_chi_danh_gia,
+}, null, 0)}
+
+So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
+
+      const raw = await callClaude(systemPrompt, prompt, false, 2048);
+      const clean = raw.replace(/```json|```/g, "").trim();
+      setCompareResult(JSON.parse(clean));
+    } catch (e) {
+      setCompareError("Lỗi so sánh nhanh: " + e.message);
+    } finally {
+      setComparing(false);
+    }
+  };
+
+  const muc_do_color = (m) => m === "Cao" ? COLORS.danger : m === "Trung bình" ? COLORS.amber : COLORS.slateLight;
+  const muc_do_bg = (m) => m === "Cao" ? COLORS.dangerLight : m === "Trung bình" ? COLORS.amberLight : COLORS.surface;
 
   const filtered = items.filter(i =>
     (i.ten_goi_thau || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -1059,6 +1203,61 @@ function ArchiveModule() {
         </div>
       </Card>
 
+      {selectedIds.length > 0 && (
+        <Card style={{ background: COLORS.tealLight, border: `1px solid ${COLORS.teal}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 13, color: COLORS.navy }}>
+              Đã chọn <strong>{selectedIds.length}/2</strong> gói thầu để so sánh
+              {selectedIds.length === 2 && <span style={{ color: COLORS.slateLight }}> · So sánh nhanh dùng bản tóm tắt đã lưu, rẻ hơn nhiều so với upload lại PDF gốc</span>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => setSelectedIds([])} variant="secondary" style={{ padding: "6px 14px", fontSize: 13 }}>Bỏ chọn</Btn>
+              <Btn onClick={quickCompare} disabled={selectedIds.length !== 2 || comparing} variant="amber" style={{ padding: "6px 14px", fontSize: 13 }}>
+                {comparing ? <><Spinner />Đang so sánh...</> : "⚡ So sánh nhanh"}
+              </Btn>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {compareError && (
+        <Card style={{ background: COLORS.dangerLight, border: `1px solid ${COLORS.danger}` }}>
+          <span style={{ color: COLORS.danger }}>⚠️ {compareError}</span>
+        </Card>
+      )}
+
+      {compareResult && (
+        <Card style={{ borderLeft: `4px solid ${COLORS.teal}` }}>
+          <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 6 }}>⚡ Kết quả So sánh nhanh</div>
+          <p style={{ fontSize: 13, color: COLORS.slate, marginBottom: 16 }}>{compareResult.tom_tat_thay_doi}</p>
+
+          {(compareResult.thay_doi_phat_hien || []).map((t, i) => (
+            <div key={i} style={{
+              border: `1px solid ${COLORS.border}`,
+              borderLeft: `4px solid ${muc_do_color(t.muc_do)}`,
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 10,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <strong style={{ fontSize: 13, color: COLORS.navy }}>{t.muc}</strong>
+                <Badge color={muc_do_color(t.muc_do)} bg={muc_do_bg(t.muc_do)}>{t.muc_do}</Badge>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.dangerLight, padding: 8, borderRadius: 4 }}>{t.ban_cu}</div>
+                <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.successLight, padding: 8, borderRadius: 4 }}>{t.ban_moi}</div>
+              </div>
+            </div>
+          ))}
+
+          {compareResult.luu_y && (
+            <div style={{ fontSize: 12, color: COLORS.slateLight, marginTop: 12, fontStyle: "italic" }}>
+              💡 {compareResult.luu_y}
+            </div>
+          )}
+        </Card>
+      )}
+
       {error && (
         <Card style={{ background: COLORS.dangerLight, border: `1px solid ${COLORS.danger}` }}>
           <span style={{ color: COLORS.danger }}>⚠️ {error}</span>
@@ -1075,19 +1274,27 @@ function ArchiveModule() {
         <div>
           <div style={{ fontSize: 12, color: COLORS.slateLight, marginBottom: 10 }}>{filtered.length} gói thầu đã lưu</div>
           {filtered.map(item => (
-            <Card key={item.id} style={{ marginBottom: 12 }}>
+            <Card key={item.id} style={{ marginBottom: 12, border: selectedIds.includes(item.id) ? `2px solid ${COLORS.teal}` : `1px solid ${COLORS.border}` }}>
               <div
-                onClick={() => setExpanded(expanded === item.id ? null : item.id)}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", cursor: "pointer" }}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}
               >
-                <div>
-                  <div style={{ fontWeight: 700, color: COLORS.navy, fontSize: 15, marginBottom: 4 }}>
-                    {item.ten_goi_thau || item.ten_file || "Gói thầu chưa đặt tên"}
-                  </div>
-                  <div style={{ fontSize: 12, color: COLORS.slateLight }}>
-                    {item.chu_dau_tu && <span>{item.chu_dau_tu} · </span>}
-                    {item.gia_tri_uoc_tinh && <span>{item.gia_tri_uoc_tinh} · </span>}
-                    Lưu ngày {item.created_at ? new Date(item.created_at).toLocaleDateString("vi-VN") : "—"}
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: 1, cursor: "pointer" }} onClick={() => setExpanded(expanded === item.id ? null : item.id)}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={(e) => { e.stopPropagation(); toggleSelect(item.id); }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ marginTop: 4, width: 16, height: 16, cursor: "pointer", accentColor: COLORS.teal }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700, color: COLORS.navy, fontSize: 15, marginBottom: 4 }}>
+                      {item.ten_goi_thau || item.ten_file || "Gói thầu chưa đặt tên"}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.slateLight }}>
+                      {item.chu_dau_tu && <span>{item.chu_dau_tu} · </span>}
+                      {item.gia_tri_uoc_tinh && <span>{item.gia_tri_uoc_tinh} · </span>}
+                      Lưu ngày {item.created_at ? new Date(item.created_at).toLocaleDateString("vi-VN") : "—"}
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1128,6 +1335,24 @@ function ArchiveModule() {
                       ))}
                     </div>
                   </div>
+
+                  {((item.doi_tac_nha_thau_phu || []).length > 0 || (item.xac_nhan_chu_dau_tu || []).length > 0) && (
+                    <div style={{ background: COLORS.amberLight, borderRadius: 8, padding: 14, marginTop: 14 }}>
+                      <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 10, fontSize: 13 }}>🔑 Đối tác & Xác nhận Chủ đầu tư</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                        <div>
+                          {(item.doi_tac_nha_thau_phu || []).map((d, i) => (
+                            <div key={i} style={{ fontSize: 12, color: COLORS.slate, marginBottom: 6 }}>🤝 {d.noi_dung}</div>
+                          ))}
+                        </div>
+                        <div>
+                          {(item.xac_nhan_chu_dau_tu || []).map((d, i) => (
+                            <div key={i} style={{ fontSize: 12, color: COLORS.slate, marginBottom: 6 }}><strong>{d.loai}:</strong> {d.noi_dung}</div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
