@@ -177,7 +177,7 @@ function Spinner() {
 
 // ─── API call ────────────────────────────────────────────────────────────────
 
-async function callClaude(systemPrompt, userContent, isMultipart = false) {
+async function callClaude(systemPrompt, userContent, isMultipart = false, maxTokens = 4096) {
   const messages = isMultipart
     ? [{ role: "user", content: userContent }]
     : [{ role: "user", content: userContent }];
@@ -188,7 +188,7 @@ async function callClaude(systemPrompt, userContent, isMultipart = false) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages,
     }),
@@ -396,6 +396,7 @@ function CompareModule() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [rawResult, setRawResult] = useState(null);
   const fileARef = useRef();
   const fileBRef = useRef();
 
@@ -408,7 +409,7 @@ function CompareModule() {
 
   const compare = async () => {
     if (!fileA || !fileB) return;
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true); setError(null); setResult(null); setRawResult(null);
     try {
       const [base64A, base64B] = await Promise.all([toBase64(fileA), toBase64(fileB)]);
 
@@ -428,7 +429,8 @@ Trả lời bằng tiếng Việt. Trả về JSON theo đúng cấu trúc sau, 
   "thay_doi_thuong_mai": ["Mô tả thay đổi điều khoản giá, bảo lãnh, thanh toán, nếu có"],
   "khuyen_nghi_hanh_dong": ["Việc cụ thể team thương mại cần làm/cập nhật trong HSDT do thay đổi này"]
 }
-Nếu không có thay đổi ở một nhóm nào, trả về mảng rỗng [] cho nhóm đó. Mức độ "Cao" dành cho thay đổi ảnh hưởng trực tiếp đến khả năng trúng thầu hoặc tuân thủ (deadline, tiêu chí loại, giá trị bảo lãnh...).`;
+Nếu không có thay đổi ở một nhóm nào, trả về mảng rỗng [] cho nhóm đó. Mức độ "Cao" dành cho thay đổi ảnh hưởng trực tiếp đến khả năng trúng thầu hoặc tuân thủ (deadline, tiêu chí loại, giá trị bảo lãnh...).
+QUAN TRỌNG: mỗi trường "ban_cu"/"ban_moi"/mô tả chỉ viết tối đa 1-2 câu ngắn, súc tích, không trích dẫn nguyên văn dài. Giới hạn "thay_doi_quan_trong" tối đa 12 mục quan trọng nhất, không liệt kê toàn bộ chi tiết nhỏ.`;
 
       const userContent = [
         { type: "text", text: "ĐÂY LÀ BẢN CŨ (phiên bản trước):" },
@@ -438,9 +440,16 @@ Nếu không có thay đổi ở một nhóm nào, trả về mảng rỗng [] c
         { type: "text", text: "So sánh 2 bản HSMT trên, tìm điểm khác biệt theo đúng cấu trúc JSON yêu cầu." },
       ];
 
-      const raw = await callClaude(systemPrompt, userContent, true);
+      const raw = await callClaude(systemPrompt, userContent, true, 8192);
       const clean = raw.replace(/```json|```/g, "").trim();
-      setResult(JSON.parse(clean));
+      try {
+        setResult(JSON.parse(clean));
+      } catch (parseErr) {
+        // JSON bị lỗi cấu trúc (thường do bị cắt giữa đường) — vẫn giữ lại nội dung thô
+        // để không mất trắng kết quả đã tốn token lấy về
+        setRawResult(clean);
+        setError("Không đọc được kết quả dạng có cấu trúc (có thể do hồ sơ quá dài). Nội dung thô AI trả về vẫn hiển thị phía dưới.");
+      }
     } catch (e) {
       setError("Lỗi so sánh: " + e.message);
     } finally {
@@ -498,6 +507,25 @@ Nếu không có thay đổi ở một nhóm nào, trả về mảng rỗng [] c
       {error && <Card style={{ background: COLORS.dangerLight, border: `1px solid ${COLORS.danger}` }}>
         <span style={{ color: COLORS.danger }}>⚠️ {error}</span>
       </Card>}
+
+      {rawResult && (
+        <Card style={{ background: COLORS.amberLight, border: `1px solid ${COLORS.amber}` }}>
+          <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 10 }}>📄 Nội dung thô từ AI (chưa định dạng được)</div>
+          <div style={{
+            whiteSpace: "pre-wrap",
+            fontSize: 12,
+            color: COLORS.slate,
+            fontFamily: "monospace",
+            background: COLORS.white,
+            padding: 12,
+            borderRadius: 6,
+            maxHeight: 400,
+            overflow: "auto",
+          }}>
+            {rawResult}
+          </div>
+        </Card>
+      )}
 
       {result && (
         <div>
