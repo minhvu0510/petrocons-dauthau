@@ -1144,20 +1144,20 @@ function ArchiveModule() {
       // So sánh dựa trên JSON tóm tắt đã lưu — KHÔNG gửi lại file PDF gốc,
       // nên rẻ hơn nhiều lần so với module So sánh Phiên bản (chỉ gửi text, không gửi ảnh trang PDF)
       const systemPrompt = `Bạn là chuyên gia phân tích hồ sơ mời thầu (HSMT) cho công ty xây lắp dầu khí PETROCONs.
-Bạn nhận 2 bản tóm tắt JSON (đã được trích xuất trước đó từ 2 phiên bản HSMT của cùng 1 gói thầu). Mỗi bản tóm tắt có thể kèm số trang gốc trong PDF cho từng mục (trường "trang").
+Bạn nhận 2 bản tóm tắt JSON (đã được trích xuất trước đó từ 2 phiên bản HSMT của cùng 1 gói thầu).
 So sánh 2 bản tóm tắt này, tìm điểm khác biệt. Lưu ý: đây là so sánh dựa trên tóm tắt, không phải toàn văn — có thể không bắt được thay đổi nhỏ không nằm trong tóm tắt.
 Trả lời bằng tiếng Việt, súc tích. Trả về JSON theo cấu trúc:
 {
   "tom_tat_thay_doi": "Tóm tắt ngắn 1-2 câu",
   "thay_doi_phat_hien": [
-    {"muc": "Tên mục", "ban_cu": "...", "ban_moi": "...", "trang_cu": "Số trang ở bản cũ nếu có trong dữ liệu nguồn, hoặc rỗng nếu không có", "trang_moi": "Số trang ở bản mới nếu có trong dữ liệu nguồn, hoặc rỗng nếu không có", "muc_do": "Cao hoặc Trung bình hoặc Thấp"}
+    {"muc": "Tên mục", "ban_cu": "...", "ban_moi": "...", "muc_do": "Cao hoặc Trung bình hoặc Thấp"}
   ],
   "luu_y": "Nhắc nhở ngắn nếu cần so sánh sâu hơn bằng cách upload lại 2 file PDF gốc"
 }
 QUAN TRỌNG:
 - Đây phải là JSON hợp lệ 100%. Nếu nội dung cần trích có chứa dấu ngoặc kép ("), PHẢI escape thành \\" hoặc diễn đạt lại không dùng dấu ngoặc kép.
 - Mỗi trường "ban_cu"/"ban_moi": tối đa 1-2 câu ngắn, không trích dẫn nguyên văn dài.
-- "trang_cu"/"trang_moi": CHỈ lấy đúng số trang đã có sẵn trong dữ liệu nguồn (trường "trang" của từng mục trong doi_tac_nha_thau_phu/xac_nhan_chu_dau_tu nếu khớp với thay đổi đang nêu). KHÔNG được tự đoán hoặc bịa số trang cho các mục khác (yeu_cau_chinh, rui_ro_can_luu_y...) vì những mục đó không có sẵn số trang trong dữ liệu nguồn — để trống nếu không có.
+- KHÔNG đưa ra số trang trong kết quả này — bạn chỉ nhận được bản tóm tắt văn bản, không có quyền truy cập file PDF gốc, nên không thể xác định số trang chính xác. Nếu cần biết số trang, người dùng nên dùng module "So sánh Phiên bản" (upload trực tiếp 2 file PDF).
 - Tối đa 10 mục trong "thay_doi_phat_hien", chọn những thay đổi quan trọng nhất.`;
 
       const prompt = `BẢN A (lưu ngày ${itemA.created_at ? new Date(itemA.created_at).toLocaleDateString("vi-VN") : "?"}):
@@ -1239,7 +1239,7 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 13, color: COLORS.navy }}>
               Đã chọn <strong>{selectedIds.length}/2</strong> gói thầu để so sánh
-              {selectedIds.length === 2 && <span style={{ color: COLORS.slateLight }}> · So sánh nhanh dùng bản tóm tắt đã lưu, rẻ hơn nhiều so với upload lại PDF gốc</span>}
+              {selectedIds.length === 2 && <span style={{ color: COLORS.slateLight }}> · So sánh nhanh dùng bản tóm tắt đã lưu, rẻ hơn nhiều so với upload lại PDF gốc — không hiển thị số trang vì không đọc trực tiếp file PDF</span>}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => setSelectedIds([])} variant="secondary" style={{ padding: "6px 14px", fontSize: 13 }}>Bỏ chọn</Btn>
@@ -1287,14 +1287,8 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
                 <Badge color={muc_do_color(t.muc_do)} bg={muc_do_bg(t.muc_do)}>{t.muc_do}</Badge>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  {t.trang_cu && <div style={{ fontSize: 10, color: COLORS.teal, fontWeight: 700, marginBottom: 3 }}>📄 Trang {t.trang_cu}</div>}
-                  <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.dangerLight, padding: 8, borderRadius: 4 }}>{t.ban_cu}</div>
-                </div>
-                <div>
-                  {t.trang_moi && <div style={{ fontSize: 10, color: COLORS.teal, fontWeight: 700, marginBottom: 3 }}>📄 Trang {t.trang_moi}</div>}
-                  <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.successLight, padding: 8, borderRadius: 4 }}>{t.ban_moi}</div>
-                </div>
+                <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.dangerLight, padding: 8, borderRadius: 4 }}>{t.ban_cu}</div>
+                <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.successLight, padding: 8, borderRadius: 4 }}>{t.ban_moi}</div>
               </div>
             </div>
           ))}
