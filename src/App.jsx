@@ -79,6 +79,21 @@ async function deleteGoiThau(id) {
   return supabaseRequest(`goi_thau?id=eq.${id}`, { method: "DELETE" });
 }
 
+async function saveSoSanh(record) {
+  return supabaseRequest("so_sanh_phien_ban", {
+    method: "POST",
+    body: JSON.stringify(record),
+  });
+}
+
+async function listSoSanh() {
+  return supabaseRequest("so_sanh_phien_ban?select=*&order=created_at.desc");
+}
+
+async function deleteSoSanh(id) {
+  return supabaseRequest(`so_sanh_phien_ban?id=eq.${id}`, { method: "DELETE" });
+}
+
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 function PipelineRule() {
@@ -486,6 +501,9 @@ function CompareModule() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [rawResult, setRawResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const fileARef = useRef();
   const fileBRef = useRef();
 
@@ -498,7 +516,7 @@ function CompareModule() {
 
   const compare = async () => {
     if (!fileA || !fileB) return;
-    setLoading(true); setError(null); setResult(null); setRawResult(null);
+    setLoading(true); setError(null); setResult(null); setRawResult(null); setSaved(false); setSaveError(null);
     try {
       const [base64A, base64B] = await Promise.all([toBase64(fileA), toBase64(fileB)]);
 
@@ -544,6 +562,29 @@ QUAN TRỌNG: mỗi trường "ban_cu"/"ban_moi"/mô tả chỉ viết tối đa
       setError("Lỗi so sánh: " + e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveToArchiveCompare = async () => {
+    if (!result) return;
+    setSaving(true); setSaveError(null);
+    try {
+      await saveSoSanh({
+        ten_file_cu: fileA?.name || null,
+        ten_file_moi: fileB?.name || null,
+        ten_goi_thau: result.tom_tat_thay_doi || null,
+        tom_tat_thay_doi: result.tom_tat_thay_doi || null,
+        thay_doi_quan_trong: result.thay_doi_quan_trong || [],
+        thay_doi_thoi_gian: result.thay_doi_thoi_gian || [],
+        thay_doi_ky_thuat: result.thay_doi_ky_thuat || [],
+        thay_doi_thuong_mai: result.thay_doi_thuong_mai || [],
+        khuyen_nghi_hanh_dong: result.khuyen_nghi_hanh_dong || [],
+      });
+      setSaved(true);
+    } catch (e) {
+      setSaveError(e.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -711,6 +752,22 @@ QUAN TRỌNG: mỗi trường "ban_cu"/"ban_moi"/mô tả chỉ viết tối đa
               ))}
             </Card>
           )}
+
+          <Card style={{ background: saved ? COLORS.successLight : COLORS.surface, border: `1px solid ${saved ? COLORS.success : COLORS.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 13, color: COLORS.slate }}>
+                {saved
+                  ? "✅ Đã lưu vào Kho Gói thầu — xem lại tại tab Kho lưu trữ"
+                  : "Lưu kết quả so sánh này vào database để tra cứu lại sau (kết quả tốn token, nên lưu lại để không phải so sánh lại từ đầu)"}
+              </div>
+              {!saved && (
+                <Btn onClick={saveToArchiveCompare} disabled={saving} variant="amber">
+                  {saving ? <><Spinner />Đang lưu...</> : "💾 Lưu vào Kho"}
+                </Btn>
+              )}
+            </div>
+            {saveError && <div style={{ color: COLORS.danger, fontSize: 12, marginTop: 8 }}>⚠️ {saveError}</div>}
+          </Card>
         </div>
       )}
     </div>
@@ -1085,6 +1142,7 @@ Nhấn mạnh năng lực kỹ thuật, tiến độ, an toàn và chất lượ
 // ─── Module 5: Kho Gói thầu (Archive) ────────────────────────────────────────
 
 function ArchiveModule() {
+  const [subTab, setSubTab] = useState("goi_thau"); // "goi_thau" | "so_sanh"
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1096,6 +1154,41 @@ function ArchiveModule() {
   const [compareResult, setCompareResult] = useState(null);
   const [compareError, setCompareError] = useState(null);
   const [compareRaw, setCompareRaw] = useState(null);
+
+  const [soSanhItems, setSoSanhItems] = useState([]);
+  const [soSanhLoading, setSoSanhLoading] = useState(true);
+  const [soSanhError, setSoSanhError] = useState(null);
+  const [soSanhExpanded, setSoSanhExpanded] = useState(null);
+  const [soSanhDeletingId, setSoSanhDeletingId] = useState(null);
+
+  const loadSoSanh = useCallback(async () => {
+    setSoSanhLoading(true); setSoSanhError(null);
+    try {
+      const data = await listSoSanh();
+      setSoSanhItems(data || []);
+    } catch (e) {
+      setSoSanhError(e.message);
+    } finally {
+      setSoSanhLoading(false);
+    }
+  }, []);
+
+  useState(() => { loadSoSanh(); });
+
+  const handleDeleteSoSanh = async (id) => {
+    setSoSanhDeletingId(id);
+    try {
+      await deleteSoSanh(id);
+      setSoSanhItems(soSanhItems.filter(i => i.id !== id));
+    } catch (e) {
+      setSoSanhError(e.message);
+    } finally {
+      setSoSanhDeletingId(null);
+    }
+  };
+
+  const muc_do_color2 = (m) => m === "Cao" ? COLORS.danger : m === "Trung bình" ? COLORS.amber : COLORS.slateLight;
+  const muc_do_bg2 = (m) => m === "Cao" ? COLORS.dangerLight : m === "Trung bình" ? COLORS.amberLight : COLORS.surface;
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -1221,6 +1314,124 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
   return (
     <div>
       <SectionTitle icon="🗄️" title="Kho Gói thầu" sub="Tra cứu lại các gói thầu đã phân tích trước đây — dữ liệu lưu trên Supabase" />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, borderBottom: `1px solid ${COLORS.border}` }}>
+        <button
+          onClick={() => setSubTab("goi_thau")}
+          style={{
+            padding: "10px 16px", border: "none", background: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: subTab === "goi_thau" ? 700 : 400,
+            color: subTab === "goi_thau" ? COLORS.teal : COLORS.slateLight,
+            borderBottom: subTab === "goi_thau" ? `2px solid ${COLORS.teal}` : "2px solid transparent",
+          }}
+        >
+          📋 Gói thầu đã phân tích ({items.length})
+        </button>
+        <button
+          onClick={() => setSubTab("so_sanh")}
+          style={{
+            padding: "10px 16px", border: "none", background: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: subTab === "so_sanh" ? 700 : 400,
+            color: subTab === "so_sanh" ? COLORS.teal : COLORS.slateLight,
+            borderBottom: subTab === "so_sanh" ? `2px solid ${COLORS.teal}` : "2px solid transparent",
+          }}
+        >
+          🔍 So sánh Phiên bản đã lưu ({soSanhItems.length})
+        </button>
+      </div>
+
+      {subTab === "so_sanh" ? (
+        <div>
+          <Card>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Btn onClick={loadSoSanh} variant="secondary" style={{ padding: "9px 16px", fontSize: 13 }}>🔄 Tải lại</Btn>
+            </div>
+          </Card>
+
+          {soSanhError && (
+            <Card style={{ background: COLORS.dangerLight, border: `1px solid ${COLORS.danger}` }}>
+              <span style={{ color: COLORS.danger }}>⚠️ {soSanhError}</span>
+            </Card>
+          )}
+
+          {soSanhLoading ? (
+            <Card><div style={{ color: COLORS.slateLight }}><Spinner />Đang tải...</div></Card>
+          ) : soSanhItems.length === 0 ? (
+            <Card><div style={{ color: COLORS.slateLight, textAlign: "center", padding: "20px 0" }}>
+              Chưa có bản so sánh nào được lưu. Dùng module "So sánh Phiên bản" rồi bấm "Lưu vào Kho" để bắt đầu.
+            </div></Card>
+          ) : (
+            soSanhItems.map(item => (
+              <Card key={item.id} style={{ marginBottom: 12 }}>
+                <div
+                  onClick={() => setSoSanhExpanded(soSanhExpanded === item.id ? null : item.id)}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", cursor: "pointer" }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, color: COLORS.navy, fontSize: 14, marginBottom: 4 }}>
+                      {item.ten_file_cu} → {item.ten_file_moi}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.slateLight }}>
+                      Lưu ngày {item.created_at ? new Date(item.created_at).toLocaleDateString("vi-VN") : "—"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Btn
+                      onClick={(e) => { e.stopPropagation(); handleDeleteSoSanh(item.id); }}
+                      disabled={soSanhDeletingId === item.id}
+                      variant="secondary"
+                      style={{ padding: "5px 12px", fontSize: 12 }}
+                    >
+                      {soSanhDeletingId === item.id ? "..." : "🗑️ Xoá"}
+                    </Btn>
+                    <span style={{ color: COLORS.slateLight }}>{soSanhExpanded === item.id ? "▲" : "▼"}</span>
+                  </div>
+                </div>
+
+                {soSanhExpanded === item.id && (
+                  <div>
+                    <PipelineRule />
+                    <p style={{ fontSize: 13, color: COLORS.slate, marginBottom: 14 }}>{item.tom_tat_thay_doi}</p>
+
+                    {(item.thay_doi_quan_trong || []).map((t, i) => (
+                      <div key={i} style={{
+                        border: `1px solid ${COLORS.border}`,
+                        borderLeft: `4px solid ${muc_do_color2(t.muc_do)}`,
+                        borderRadius: 6, padding: 12, marginBottom: 10,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <strong style={{ fontSize: 13, color: COLORS.navy }}>{t.muc}</strong>
+                          <Badge color={muc_do_color2(t.muc_do)} bg={muc_do_bg2(t.muc_do)}>{t.muc_do}</Badge>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div>
+                            {t.trang_cu && <div style={{ fontSize: 10, color: COLORS.teal, fontWeight: 700, marginBottom: 3 }}>📄 Trang {t.trang_cu}</div>}
+                            <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.dangerLight, padding: 8, borderRadius: 4 }}>{t.ban_cu}</div>
+                          </div>
+                          <div>
+                            {t.trang_moi && <div style={{ fontSize: 10, color: COLORS.teal, fontWeight: 700, marginBottom: 3 }}>📄 Trang {t.trang_moi}</div>}
+                            <div style={{ fontSize: 12, color: COLORS.slate, background: COLORS.successLight, padding: 8, borderRadius: 4 }}>{t.ban_moi}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {(item.khuyen_nghi_hanh_dong || []).length > 0 && (
+                      <div style={{ background: COLORS.amberLight, borderRadius: 8, padding: 12, marginTop: 10 }}>
+                        <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 8, fontSize: 13 }}>✅ Việc cần làm ngay</div>
+                        {item.khuyen_nghi_hanh_dong.map((r, i) => (
+                          <div key={i} style={{ fontSize: 12, color: COLORS.slate, marginBottom: 4 }}>{i + 1}. {r}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            ))
+          )}
+        </div>
+      ) : (
+      <div>
 
       <Card>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1401,6 +1612,8 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
             </Card>
           ))}
         </div>
+      )}
+      </div>
       )}
     </div>
   );
