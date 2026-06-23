@@ -1289,11 +1289,57 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
   const muc_do_color = (m) => m === "Cao" ? COLORS.danger : m === "Trung bình" ? COLORS.amber : COLORS.slateLight;
   const muc_do_bg = (m) => m === "Cao" ? COLORS.dangerLight : m === "Trung bình" ? COLORS.amberLight : COLORS.surface;
 
-  const filtered = items.filter(i =>
-    (i.ten_goi_thau || "").toLowerCase().includes(search.toLowerCase()) ||
-    (i.chu_dau_tu || "").toLowerCase().includes(search.toLowerCase()) ||
-    (i.ten_file || "").toLowerCase().includes(search.toLowerCase())
-  );
+  // Helper: trích xuất toàn bộ text từ 1 item để search full-text
+  const extractAllText = (item) => {
+    const parts = [
+      item.ten_goi_thau || "",
+      item.chu_dau_tu || "",
+      item.ten_file || "",
+      item.gia_tri_uoc_tinh || "",
+      item.han_nop || "",
+      // Flatten các mảng string đơn giản
+      ...(item.yeu_cau_chinh || []),
+      ...(item.dieu_kien_tham_du || []),
+      ...(item.rui_ro_can_luu_y || []),
+      ...(item.tieu_chi_danh_gia || []),
+      // Flatten các mảng object (doi_tac, xac_nhan)
+      ...(item.doi_tac_nha_thau_phu || []).map(d => `${d.noi_dung || ""} ${d.muc_do || ""}`),
+      ...(item.xac_nhan_chu_dau_tu || []).map(d => `${d.loai || ""} ${d.noi_dung || ""}`),
+    ];
+    return parts.join(" ").toLowerCase();
+  };
+
+  // Helper: tìm đoạn text chứa keyword để hiển thị context
+  const findMatchContext = (item, keyword) => {
+    if (!keyword) return null;
+    const kw = keyword.toLowerCase();
+    const matches = [];
+
+    const checkField = (label, text) => {
+      if (text && text.toLowerCase().includes(kw)) {
+        const idx = text.toLowerCase().indexOf(kw);
+        const start = Math.max(0, idx - 30);
+        const end = Math.min(text.length, idx + keyword.length + 50);
+        const snippet = (start > 0 ? "..." : "") + text.slice(start, end) + (end < text.length ? "..." : "");
+        matches.push({ label, snippet });
+      }
+    };
+
+    checkField("Tên gói thầu", item.ten_goi_thau);
+    checkField("Chủ đầu tư", item.chu_dau_tu);
+    (item.yeu_cau_chinh || []).forEach(t => checkField("Yêu cầu chính", t));
+    (item.dieu_kien_tham_du || []).forEach(t => checkField("Điều kiện tham dự", t));
+    (item.rui_ro_can_luu_y || []).forEach(t => checkField("Rủi ro", t));
+    (item.tieu_chi_danh_gia || []).forEach(t => checkField("Tiêu chí đánh giá", t));
+    (item.doi_tac_nha_thau_phu || []).forEach(d => checkField("🤝 Đối tác/Nhà thầu phụ", d.noi_dung));
+    (item.xac_nhan_chu_dau_tu || []).forEach(d => checkField(`✍️ Xác nhận CĐT (${d.loai})`, d.noi_dung));
+
+    return matches.slice(0, 3); // tối đa 3 đoạn context để không làm UI quá dài
+  };
+
+  const filtered = search.trim()
+    ? items.filter(i => extractAllText(i).includes(search.toLowerCase()))
+    : items;
 
   if (!supabaseConfigured) {
     return (
@@ -1438,7 +1484,7 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="🔍 Tìm theo tên gói thầu, chủ đầu tư, tên file..."
+            placeholder="🔍 Tìm toàn văn: tên gói, chủ đầu tư, nhà thầu phụ, yêu cầu kỹ thuật, điều kiện tham dự..."
             style={{ ...inputStyle, flex: 1 }}
           />
           <Btn onClick={load} variant="secondary" style={{ padding: "9px 16px", fontSize: 13 }}>🔄 Tải lại</Btn>
@@ -1549,6 +1595,30 @@ So sánh 2 bản trên theo đúng cấu trúc JSON yêu cầu.`;
                       {item.gia_tri_uoc_tinh && <span>{item.gia_tri_uoc_tinh} · </span>}
                       Lưu ngày {item.created_at ? new Date(item.created_at).toLocaleDateString("vi-VN") : "—"}
                     </div>
+                    {search.trim() && (() => {
+                      const matches = findMatchContext(item, search.trim());
+                      if (!matches || matches.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: 8 }}>
+                          {matches.map((m, mi) => (
+                            <div key={mi} style={{
+                              fontSize: 11,
+                              background: COLORS.amberLight,
+                              border: `1px solid ${COLORS.amber}`,
+                              borderRadius: 4,
+                              padding: "4px 8px",
+                              marginBottom: 4,
+                            }}>
+                              <span style={{ fontWeight: 700, color: COLORS.amber }}>
+                                📍 {m.label}:
+                              </span>
+                              {" "}
+                              <span style={{ color: COLORS.slate }}>{m.snippet}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
