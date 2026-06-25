@@ -30,7 +30,7 @@ const MODULES = [
   { id: "compare", label: "So sánh Phiên bản", icon: "🔍", short: "So sánh" },
   { id: "draft",   label: "Soạn HSDT",      icon: "✍️",  short: "Soạn thảo" },
   { id: "price",   label: "Phân tích Giá",   icon: "📊",  short: "Phân tích Giá" },
-  { id: "db",      label: "Hồ sơ Năng lực",  icon: "🗂️",  short: "Năng lực" },
+  { id: "db",      label: "Nhà cung cấp",    icon: "🏭",  short: "Nhà cung cấp" },
   { id: "archive", label: "Kho Gói thầu",    icon: "🗄️",  short: "Kho lưu trữ" },
 ];
 
@@ -1057,118 +1057,330 @@ Phân tích dựa trên thực tế thị trường xây lắp dầu khí Việt
   );
 }
 
-// ─── Module 4: Hồ sơ Năng lực ────────────────────────────────────────────────
+// ─── Module 4: Danh bạ Nhà cung cấp ─────────────────────────────────────────
 
-const SAMPLE_PROJECTS = [
-  { id: 1, ten: "Nhà máy Nhiệt điện Thái Bình 2", loai: "EPC nhà máy điện", nam: "2018–2022", gia_tri: "35,000 tỷ VNĐ", chu_dau_tu: "Petrovietnam", trang_thai: "Hoàn thành" },
-  { id: 2, ten: "Hệ thống ống dẫn khí Bạch Hổ", loai: "Xây lắp đường ống", nam: "2010–2013", gia_tri: "1,200 tỷ VNĐ", chu_dau_tu: "PVEP", trang_thai: "Hoàn thành" },
-  { id: 3, ten: "Kho cảng LPG Vũng Tàu", loai: "Bồn bể, kho cảng", nam: "2015–2017", gia_tri: "450 tỷ VNĐ", chu_dau_tu: "PV Gas", trang_thai: "Hoàn thành" },
-  { id: 4, ten: "Nhà máy lọc dầu Dung Quất – Gói xây lắp cơ khí", loai: "Xây lắp công nghiệp", nam: "2008–2010", gia_tri: "2,100 tỷ VNĐ", chu_dau_tu: "BSR", trang_thai: "Hoàn thành" },
+const LINH_VUC_OPTIONS = [
+  "Van", "Bolt & Fastener", "PCCC", "Cảm biến & Đo lường",
+  "Bảo ôn", "Thiết bị điện", "Hydraulic", "Làm sạch công nghiệp",
+  "Xử lý nước", "Kiểm soát khí thải", "An toàn", "Khác"
 ];
 
-function DBModule() {
+const MUC_DO_OPTIONS = ["Cao", "Trung bình", "Thấp"];
+
+async function saveNhaCungCap(record) {
+  return supabaseRequest("nha_cung_cap", {
+    method: "POST",
+    body: JSON.stringify(record),
+  });
+}
+
+async function updateNhaCungCap(id, record) {
+  return supabaseRequest(`nha_cung_cap?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(record),
+  });
+}
+
+async function listNhaCungCap() {
+  return supabaseRequest("nha_cung_cap?select=*&order=created_at.desc");
+}
+
+async function deleteNhaCungCap(id) {
+  return supabaseRequest(`nha_cung_cap?id=eq.${id}`, { method: "DELETE" });
+}
+
+const EMPTY_FORM = {
+  ten_cong_ty: "", san_pham: "", linh_vuc: [], nguon: "ENTECH Vietnam 2026",
+  quoc_gia: "Hàn Quốc", website: "", nguoi_lien_he: "", chuc_vu: "",
+  dien_thoai: "", email: "", ghi_chu: "", muc_do_quan_tam: "Trung bình", da_lien_he: false,
+};
+
+function SupplierModule() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [generated, setGenerated] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [filterLinh, setFilterLinh] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [expanded, setExpanded] = useState(null);
 
-  const filtered = SAMPLE_PROJECTS.filter(p =>
-    p.ten.toLowerCase().includes(search.toLowerCase()) ||
-    p.loai.toLowerCase().includes(search.toLowerCase()) ||
-    p.chu_dau_tu.toLowerCase().includes(search.toLowerCase())
-  );
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try { setItems(await listNhaCungCap() || []); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, []);
 
-  const generateProfile = async (project) => {
-    setSelected(project);
-    setLoading(true); setGenerated(null);
+  useState(() => { load(); });
+
+  const openNew = () => { setForm(EMPTY_FORM); setEditId(null); setShowForm(true); };
+  const openEdit = (item) => {
+    setForm({
+      ten_cong_ty: item.ten_cong_ty || "",
+      san_pham: item.san_pham || "",
+      linh_vuc: item.linh_vuc || [],
+      nguon: item.nguon || "",
+      quoc_gia: item.quoc_gia || "",
+      website: item.website || "",
+      nguoi_lien_he: item.nguoi_lien_he || "",
+      chuc_vu: item.chuc_vu || "",
+      dien_thoai: item.dien_thoai || "",
+      email: item.email || "",
+      ghi_chu: item.ghi_chu || "",
+      muc_do_quan_tam: item.muc_do_quan_tam || "Trung bình",
+      da_lien_he: item.da_lien_he || false,
+    });
+    setEditId(item.id);
+    setShowForm(true);
+  };
+
+  const toggleLinh = (v) => setForm(f => ({
+    ...f,
+    linh_vuc: f.linh_vuc.includes(v) ? f.linh_vuc.filter(x => x !== v) : [...f.linh_vuc, v]
+  }));
+
+  const handleSave = async () => {
+    if (!form.ten_cong_ty.trim()) return;
+    setSaving(true);
     try {
-      const systemPrompt = `Bạn là chuyên gia soạn hồ sơ năng lực cho công ty xây lắp dầu khí PETROCONs.
-Viết bằng tiếng Việt, chuyên nghiệp, phù hợp hồ sơ đấu thầu. Chỉ trả về đoạn văn mô tả kinh nghiệm.`;
-
-      const prompt = `Soạn đoạn mô tả kinh nghiệm tương tự cho dự án sau (150-200 từ, phù hợp đưa vào HSDT):
-- Tên dự án: ${project.ten}
-- Loại công trình: ${project.loai}
-- Thời gian: ${project.nam}
-- Giá trị hợp đồng: ${project.gia_tri}
-- Chủ đầu tư: ${project.chu_dau_tu}
-Nhấn mạnh năng lực kỹ thuật, tiến độ, an toàn và chất lượng.`;
-
-      const text = await callClaude(systemPrompt, prompt);
-      setGenerated(text);
-    } catch (e) {
-      setGenerated("Lỗi: " + e.message);
-    } finally {
-      setLoading(false);
-    }
+      if (editId) {
+        const updated = await updateNhaCungCap(editId, { ...form, updated_at: new Date().toISOString() });
+        if (updated?.[0]) setItems(items.map(i => i.id === editId ? updated[0] : i));
+        else await load();
+      } else {
+        await saveNhaCungCap(form);
+        await load();
+      }
+      setShowForm(false); setEditId(null);
+    } catch (e) { setError("Lỗi lưu: " + e.message); }
+    finally { setSaving(false); }
   };
 
-  const copy = () => {
-    navigator.clipboard.writeText(generated || "");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleDelete = async (id) => {
+    setDeletingId(id);
+    try { await deleteNhaCungCap(id); setItems(items.filter(i => i.id !== id)); }
+    catch (e) { setError(e.message); }
+    finally { setDeletingId(null); }
   };
+
+  const mauColor = (m) => m === "Cao" ? COLORS.danger : m === "Trung bình" ? COLORS.amber : COLORS.slateLight;
+  const mauBg = (m) => m === "Cao" ? COLORS.dangerLight : m === "Trung bình" ? COLORS.amberLight : COLORS.surface;
+
+  const filtered = items.filter(i => {
+    const txt = `${i.ten_cong_ty} ${i.san_pham} ${i.nguoi_lien_he} ${(i.linh_vuc||[]).join(" ")} ${i.nguon} ${i.ghi_chu}`.toLowerCase();
+    const matchSearch = !search || txt.includes(search.toLowerCase());
+    const matchLinh = !filterLinh || (i.linh_vuc || []).includes(filterLinh);
+    return matchSearch && matchLinh;
+  });
+
+  if (!supabaseConfigured) return (
+    <div>
+      <SectionTitle icon="🏭" title="Danh bạ Nhà cung cấp" sub="Quản lý thông tin đối tác cung cấp thiết bị, vật tư" />
+      <Card style={{ background: COLORS.amberLight, border: `1px solid ${COLORS.amber}` }}>
+        <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 8 }}>⚙️ Chưa kết nối Supabase</div>
+        <p style={{ fontSize: 13, color: COLORS.slate, margin: 0 }}>Cần cấu hình VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trong Vercel, và chạy migration-004.sql để tạo bảng.</p>
+      </Card>
+    </div>
+  );
 
   return (
     <div>
-      <SectionTitle icon="🗂️" title="Hồ sơ Năng lực & Kinh nghiệm" sub="Tra cứu dự án tham chiếu và tạo đoạn mô tả kinh nghiệm tương tự cho HSDT" />
+      <SectionTitle icon="🏭" title="Danh bạ Nhà cung cấp" sub="Quản lý thông tin đối tác cung cấp thiết bị, vật tư — van, bolt, PCCC, cảm biến..." />
 
+      {/* Toolbar */}
       <Card>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="🔍 Tìm dự án theo tên, loại công trình, chủ đầu tư..."
-          style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-        />
-        <div style={{ marginTop: 4, fontSize: 12, color: COLORS.slateLight }}>
-          {filtered.length} dự án — đây là dữ liệu mẫu, tích hợp database thực khi triển khai nội bộ
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Tìm tên công ty, sản phẩm, người liên hệ, lĩnh vực..."
+            style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+          <select value={filterLinh} onChange={e => setFilterLinh(e.target.value)} style={{ ...inputStyle, width: 160 }}>
+            <option value="">Tất cả lĩnh vực</option>
+            {LINH_VUC_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          </select>
+          <Btn onClick={load} variant="secondary" style={{ padding: "9px 14px", fontSize: 13 }}>🔄</Btn>
+          <Btn onClick={openNew} variant="primary">+ Thêm nhà cung cấp</Btn>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 12, color: COLORS.slateLight }}>
+          {filtered.length}/{items.length} nhà cung cấp
         </div>
       </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-        {filtered.map(p => (
-          <div
-            key={p.id}
-            onClick={() => generateProfile(p)}
-            style={{
-              background: selected?.id === p.id ? COLORS.tealLight : COLORS.white,
-              border: `1px solid ${selected?.id === p.id ? COLORS.teal : COLORS.border}`,
-              borderRadius: 8,
-              padding: "16px",
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            <div style={{ fontWeight: 700, color: COLORS.navy, fontSize: 14, marginBottom: 6 }}>{p.ten}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-              <Badge>{p.loai}</Badge>
-              <Badge color={COLORS.success} bg={COLORS.successLight}>{p.trang_thai}</Badge>
-            </div>
-            <div style={{ fontSize: 12, color: COLORS.slateLight }}>
-              {p.chu_dau_tu} · {p.nam} · <strong style={{ color: COLORS.amber }}>{p.gia_tri}</strong>
-            </div>
-          </div>
-        ))}
-      </div>
+      {error && <Card style={{ background: COLORS.dangerLight, border: `1px solid ${COLORS.danger}` }}>
+        <span style={{ color: COLORS.danger }}>⚠️ {error}</span>
+      </Card>}
 
-      {(loading || generated) && (
+      {/* Form thêm/sửa */}
+      {showForm && (
         <Card style={{ borderLeft: `4px solid ${COLORS.teal}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, color: COLORS.navy }}>
-              Mô tả kinh nghiệm: {selected?.ten}
-            </div>
-            {generated && !loading && (
-              <Btn onClick={copy} variant="secondary" style={{ padding: "6px 14px", fontSize: 13 }}>
-                {copied ? "✅ Đã copy" : "📋 Copy"}
-              </Btn>
-            )}
+          <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 16, fontSize: 15 }}>
+            {editId ? "✏️ Chỉnh sửa nhà cung cấp" : "➕ Thêm nhà cung cấp mới"}
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={labelStyle}>Tên công ty *</label>
+              <input value={form.ten_cong_ty} onChange={e => setForm(f => ({...f, ten_cong_ty: e.target.value}))}
+                placeholder="VD: HYUNWOO Industrial Co., LTD." style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Sản phẩm chính</label>
+              <input value={form.san_pham} onChange={e => setForm(f => ({...f, san_pham: e.target.value}))}
+                placeholder="VD: Knife Gate Valves, HWCUPOLA" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Quốc gia</label>
+              <input value={form.quoc_gia} onChange={e => setForm(f => ({...f, quoc_gia: e.target.value}))}
+                placeholder="VD: Hàn Quốc, Việt Nam, Nhật Bản" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Website</label>
+              <input value={form.website} onChange={e => setForm(f => ({...f, website: e.target.value}))}
+                placeholder="VD: www.hwvalve.net" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Nguồn</label>
+              <input value={form.nguon} onChange={e => setForm(f => ({...f, nguon: e.target.value}))}
+                placeholder="VD: ENTECH Vietnam 2026, Giới thiệu" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Mức độ quan tâm</label>
+              <select value={form.muc_do_quan_tam} onChange={e => setForm(f => ({...f, muc_do_quan_tam: e.target.value}))} style={inputStyle}>
+                {MUC_DO_OPTIONS.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Lĩnh vực — multi-select tag */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Lĩnh vực cung cấp</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {LINH_VUC_OPTIONS.map(v => (
+                <div key={v} onClick={() => toggleLinh(v)} style={{
+                  padding: "4px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer",
+                  fontWeight: form.linh_vuc.includes(v) ? 700 : 400,
+                  background: form.linh_vuc.includes(v) ? COLORS.teal : COLORS.surface,
+                  color: form.linh_vuc.includes(v) ? COLORS.white : COLORS.slate,
+                  border: `1px solid ${form.linh_vuc.includes(v) ? COLORS.teal : COLORS.border}`,
+                  transition: "all 0.15s",
+                }}>{v}</div>
+              ))}
+            </div>
+          </div>
+
           <PipelineRule />
-          {loading
-            ? <div style={{ color: COLORS.slateLight, fontSize: 14 }}><Spinner />Đang soạn mô tả...</div>
-            : <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.75, fontSize: 14, color: COLORS.slate, fontFamily: "Georgia, serif" }}>{generated}</div>
-          }
+          <div style={{ fontWeight: 600, color: COLORS.navy, marginBottom: 10, fontSize: 13 }}>Thông tin liên hệ</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={labelStyle}>Người liên hệ</label>
+              <input value={form.nguoi_lien_he} onChange={e => setForm(f => ({...f, nguoi_lien_he: e.target.value}))}
+                placeholder="VD: Mr. Kim, Ms. Nguyen" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Chức vụ</label>
+              <input value={form.chuc_vu} onChange={e => setForm(f => ({...f, chuc_vu: e.target.value}))}
+                placeholder="VD: Sales Manager" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Điện thoại</label>
+              <input value={form.dien_thoai} onChange={e => setForm(f => ({...f, dien_thoai: e.target.value}))}
+                placeholder="+82) 55 763 8183" style={inputStyle} />
+            </div>
+            <div style={{ gridColumn: "span 2" }}>
+              <label style={labelStyle}>Email</label>
+              <input value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
+                placeholder="sales@company.com" style={inputStyle} />
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: COLORS.slate }}>
+                <input type="checkbox" checked={form.da_lien_he}
+                  onChange={e => setForm(f => ({...f, da_lien_he: e.target.checked}))}
+                  style={{ width: 16, height: 16, accentColor: COLORS.teal }} />
+                Đã liên hệ
+              </label>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>Ghi chú / Đánh giá</label>
+            <textarea value={form.ghi_chu} onChange={e => setForm(f => ({...f, ghi_chu: e.target.value}))}
+              placeholder="VD: Gặp tại booth B12 ENTECH, quan tâm valve ash handling cho dự án Long Phú 1, cần xin catalogue..."
+              rows={3}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn onClick={handleSave} disabled={saving || !form.ten_cong_ty.trim()} variant="primary">
+              {saving ? <><Spinner />Đang lưu...</> : editId ? "💾 Cập nhật" : "💾 Lưu nhà cung cấp"}
+            </Btn>
+            <Btn onClick={() => { setShowForm(false); setEditId(null); }} variant="secondary">Huỷ</Btn>
+          </div>
         </Card>
+      )}
+
+      {/* Danh sách */}
+      {loading ? (
+        <Card><div style={{ color: COLORS.slateLight }}><Spinner />Đang tải...</div></Card>
+      ) : filtered.length === 0 ? (
+        <Card><div style={{ color: COLORS.slateLight, textAlign: "center", padding: "24px 0" }}>
+          {items.length === 0
+            ? <>Chưa có nhà cung cấp nào. Bấm <strong>+ Thêm nhà cung cấp</strong> để bắt đầu nhập contact từ sự kiện ENTECH.</>
+            : "Không tìm thấy nhà cung cấp phù hợp."}
+        </div></Card>
+      ) : (
+        filtered.map(item => (
+          <Card key={item.id} style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpanded(expanded === item.id ? null : item.id)}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontWeight: 700, color: COLORS.navy, fontSize: 15 }}>{item.ten_cong_ty}</span>
+                  {item.quoc_gia && <Badge color={COLORS.slateLight} bg={COLORS.surface}>{item.quoc_gia}</Badge>}
+                  {item.muc_do_quan_tam && <Badge color={mauColor(item.muc_do_quan_tam)} bg={mauBg(item.muc_do_quan_tam)}>{item.muc_do_quan_tam}</Badge>}
+                  {item.da_lien_he && <Badge color={COLORS.success} bg={COLORS.successLight}>✓ Đã liên hệ</Badge>}
+                </div>
+                {item.san_pham && <div style={{ fontSize: 13, color: COLORS.slate, marginBottom: 6 }}>{item.san_pham}</div>}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(item.linh_vuc || []).map(v => <Badge key={v}>{v}</Badge>)}
+                  {item.nguon && <span style={{ fontSize: 11, color: COLORS.slateLight }}>· {item.nguon}</span>}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginLeft: 12 }}>
+                <Btn onClick={e => { e.stopPropagation(); openEdit(item); }} variant="secondary" style={{ padding: "5px 10px", fontSize: 12 }}>✏️</Btn>
+                <Btn onClick={e => { e.stopPropagation(); handleDelete(item.id); }} disabled={deletingId === item.id} variant="secondary" style={{ padding: "5px 10px", fontSize: 12 }}>
+                  {deletingId === item.id ? "..." : "🗑️"}
+                </Btn>
+                <span style={{ color: COLORS.slateLight, padding: "5px 4px" }}>{expanded === item.id ? "▲" : "▼"}</span>
+              </div>
+            </div>
+
+            {expanded === item.id && (
+              <div>
+                <PipelineRule />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 8, fontSize: 12, textTransform: "uppercase" }}>📞 Liên hệ</div>
+                    {item.nguoi_lien_he && <div style={{ marginBottom: 4 }}><strong>{item.nguoi_lien_he}</strong>{item.chuc_vu && ` — ${item.chuc_vu}`}</div>}
+                    {item.dien_thoai && <div style={{ color: COLORS.slate, marginBottom: 2 }}>📱 {item.dien_thoai}</div>}
+                    {item.email && <div style={{ color: COLORS.teal, marginBottom: 2 }}>✉️ {item.email}</div>}
+                    {item.website && <div style={{ color: COLORS.teal }}>🌐 {item.website}</div>}
+                  </div>
+                  <div>
+                    {item.ghi_chu && (
+                      <>
+                        <div style={{ fontWeight: 700, color: COLORS.navy, marginBottom: 8, fontSize: 12, textTransform: "uppercase" }}>📝 Ghi chú</div>
+                        <div style={{ color: COLORS.slate, lineHeight: 1.6 }}>{item.ghi_chu}</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        ))
       )}
     </div>
   );
@@ -1822,7 +2034,7 @@ export default function App() {
         {active === "compare" && <CompareModule />}
         {active === "draft"   && <DraftModule />}
         {active === "price"   && <PriceModule />}
-        {active === "db"      && <DBModule />}
+        {active === "db"      && <SupplierModule />}
         {active === "archive" && <ArchiveModule />}
       </div>
 
