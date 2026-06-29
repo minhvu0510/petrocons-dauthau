@@ -1974,12 +1974,21 @@ export default function App() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         * { box-sizing: border-box; }
-        input:focus, select:focus { border-color: ${COLORS.teal} !important; box-shadow: 0 0 0 3px ${COLORS.tealLight}; }
+        input:focus, select:focus, textarea:focus { border-color: ${COLORS.teal} !important; box-shadow: 0 0 0 3px ${COLORS.tealLight}; }
+        @media (max-width: 600px) {
+          .grid-2col { grid-template-columns: 1fr !important; }
+          .grid-3col { grid-template-columns: 1fr !important; }
+          .hide-mobile { display: none !important; }
+          div[style*="gridTemplateColumns"][style*="1fr 1fr"] { grid-template-columns: 1fr !important; }
+          div[style*="gridTemplateColumns"][style*="repeat(3"] { grid-template-columns: 1fr !important; }
+          div[style*="gridTemplateColumns"][style*="repeat(2"] { grid-template-columns: 1fr !important; }
+          div[style*="gridTemplateColumns"][style*="1fr 1fr 1fr"] { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       {/* Header */}
-      <div style={{ background: COLORS.navy, padding: "0 32px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+      <div style={{ background: COLORS.navy, padding: "0 16px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 56 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{
               width: 36, height: 36, borderRadius: 8,
@@ -1999,37 +2008,60 @@ export default function App() {
       {/* Pipeline accent */}
       <div style={{ height: 3, background: `linear-gradient(90deg, ${COLORS.teal}, ${COLORS.amber}, ${COLORS.teal})` }} />
 
-      {/* Nav tabs */}
-      <div style={{ background: COLORS.white, borderBottom: `1px solid ${COLORS.border}`, padding: "0 32px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", gap: 0 }}>
+      {/* Nav tabs — responsive */}
+      <div style={{ background: COLORS.white, borderBottom: `1px solid ${COLORS.border}` }}>
+        <style>{`
+          .nav-tabs-wrap {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            padding: 0 16px;
+          }
+          .nav-tab-btn {
+            padding: 12px 14px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            flex-shrink: 0;
+          }
+          @media (min-width: 640px) {
+            .nav-tabs-wrap { padding: 0 32px; }
+            .nav-tab-btn { padding: 14px 16px; font-size: 13px; }
+          }
+          @media (max-width: 480px) {
+            .nav-tab-btn { padding: 10px 10px; font-size: 11px; }
+            .nav-tab-label { display: none; }
+            .nav-tab-btn.active .nav-tab-label { display: inline; }
+          }
+        `}</style>
+        <div className="nav-tabs-wrap">
           {MODULES.map(m => (
             <button
               key={m.id}
               onClick={() => setActive(m.id)}
+              className={`nav-tab-btn${active === m.id ? " active" : ""}`}
               style={{
-                padding: "14px 20px",
-                border: "none",
                 borderBottom: active === m.id ? `3px solid ${COLORS.teal}` : "3px solid transparent",
-                background: "none",
-                cursor: "pointer",
-                fontSize: 13,
                 fontWeight: active === m.id ? 700 : 400,
                 color: active === m.id ? COLORS.teal : COLORS.slateLight,
-                transition: "all 0.15s",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
               }}
             >
               <span>{m.icon}</span>
-              <span>{m.short}</span>
+              <span className="nav-tab-label">{m.short}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 32px" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 16px" }}>
         {active === "analyze" && <AnalyzeModule />}
         {active === "compare" && <CompareModule />}
         {active === "draft"   && <DraftModule />}
